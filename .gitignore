@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Medical Device Integration Lab - local/generated data
+data/
+synthea/output/
+synthea/logs/
+exports/
+logs/
+tmp/
+
+# Local Docker/runtime files
+docker-data/
+postgres-data/
+grafana-data/
+prometheus-data/
+
+# Environment examples are allowed, real env files are not
+.env
+.env.*
+!.env.example
+
+# Healthcare/privacy safety
+real-data/
+production-data/
+phi/
+patient-data/
+internal-docs/
+screenshots/
