@@ -1,0 +1,19 @@
+{
+  "resourceType": "Device",
+  "id": "mon-001",
+  "identifier": [
+    {
+      "system": "http://medical-device-integration-lab.local/device-id",
+      "value": "MON-001"
+    }
+  ],
+  "deviceName": [
+    {
+      "name": "Fake Vital Signs Monitor 001",
+      "type": "user-friendly-name"
+    }
+  ],
+  "manufacturer": "Homelab Medical Devices",
+  "modelNumber": "VS-1000",
+  "status": "active"
+}
