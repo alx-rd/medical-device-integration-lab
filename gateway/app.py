@@ -2,6 +2,55 @@ from fastapi import FastAPI, Body
 
 app = FastAPI()
 
+
+def make_fhir_observation(measurement_name: str, value: float, device_message: dict) -> dict:
+    device_id = device_message["device_id"]
+    measurement = ALLOWED_MEASUREMENTS[measurement_name]
+    fhir_device_id = KNOWN_DEVICES[device_id]["fhir_device_id"]
+
+    return {
+        "resourceType": "Observation",
+        "status": "final",
+        "category": [
+            {
+                "coding": [
+                    {
+                        "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                        "code": "vital-signs",
+                        "display": "Vital Signs"
+                    }
+                ]
+            }
+        ],
+        "code": {
+            "coding": [
+                {
+                    "system": "http://loinc.org",
+                    "code": measurement["loinc"],
+                    "display": measurement["meaning"]
+                }
+            ],
+            "text": measurement["meaning"]
+        },
+        "subject": {
+            "reference": f"Patient/{DEFAULT_PATIENT_ID}"
+        },
+        "device": {
+            "reference": f"Device/{fhir_device_id}"
+        },
+        "effectiveDateTime": device_message["timestamp"],
+        "valueQuantity": {
+            "value": value,
+            "unit": measurement["unit"],
+            "system": "http://unitsofmeasure.org",
+            "code": measurement["unit_code"]
+        }
+    }
+
+DEFAULT_PATIENT_ID = "patient-001"
+
+
+
 KNOWN_DEVICES = {
     "MON-001": {
         "fhir_device_id": "mon-001",
@@ -11,29 +60,36 @@ KNOWN_DEVICES = {
 
 ALLOWED_MEASUREMENTS = {
     "hr": {
-
         "meaning": "Heart Rate",
+        "loinc": "8867-4",
+        "unit": "beats/min",
+        "unit_code": "/min",
         "min": 20,
         "max":250
     },
 
     "spo2": {
-
         "meaning": "Oxygen Saturation",
+        "loinc": "59408-5",
+        "unit": "%",
+        "unit_code": "%",
         "min": 50,
         "max":100
     },
-
     "rr": {
-
         "meaning": "Respiratory Rate",
+        "loinc": "9279-1",
+        "unit": "breaths/min",
+        "unit_code": "/min",
         "min": 2,
         "max":80
     },
-
     "temp_c": {
 
         "meaning": "Temperature Celsius",
+        "loinc": "8310-5",
+        "unit": "Cel",
+        "unit_code": "Cel",
         "min": 30,
         "max": 45
     }
@@ -110,8 +166,15 @@ async def receive_device_event(device_message: dict = Body(...)):
     print("Received valid measurements:")
     print(measurements)
 
+    fhir_observations = []
+
+    for measurement_name, value in measurements.items():
+        observation = make_fhir_observation(measurement_name, value, device_message)
+        fhir_observations.append(observation)
+
     return {
         "status": "received",
-        "message": "Device message passed device and measurement validation",
-        "received_message": device_message
+        "message": "Device message passed validation and was mapped to FHIR",
+        "received_message": device_message,
+        "fhir_observations": fhir_observations
     }
