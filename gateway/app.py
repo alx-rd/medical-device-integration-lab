@@ -1,6 +1,11 @@
+import requests
+
+
 from fastapi import FastAPI, Body
 
 app = FastAPI()
+FHIR_BASE_URL = "http://localhost:8080/fhir"
+DEFAULT_PATIENT_ID = "patient-001"
 
 
 def make_fhir_observation(measurement_name: str, value: float, device_message: dict) -> dict:
@@ -47,9 +52,27 @@ def make_fhir_observation(measurement_name: str, value: float, device_message: d
         }
     }
 
-DEFAULT_PATIENT_ID = "patient-001"
+def post_observation_to_fhir(observation: dict) -> dict:
+    response = requests.post(
+        f"{FHIR_BASE_URL}/Observation",
+        json=observation,
+        headers={"Content-Type": "application/fhir+json"},
+        timeout=10
+    )
 
+    if response.status_code not in [200, 201]:
+        return {
+            "status": "failed",
+            "status_code": response.status_code,
+            "error": response.text
+        }
 
+    created_observation = response.json()
+
+    return {
+        "status": "created",
+        "observation_id": created_observation.get("id")
+    }
 
 KNOWN_DEVICES = {
     "MON-001": {
@@ -167,14 +190,19 @@ async def receive_device_event(device_message: dict = Body(...)):
     print(measurements)
 
     fhir_observations = []
+    fhir_post_results = []
 
     for measurement_name, value in measurements.items():
         observation = make_fhir_observation(measurement_name, value, device_message)
         fhir_observations.append(observation)
 
+        post_result = post_observation_to_fhir(observation)
+        fhir_post_results.append(post_result)
+
     return {
         "status": "received",
-        "message": "Device message passed validation and was mapped to FHIR",
+        "message": "Device message passed validation, was mapped to FHIR, and was sent to HAPI FHIR",
         "received_message": device_message,
+        "fhir_post_results": fhir_post_results,
         "fhir_observations": fhir_observations
     }
