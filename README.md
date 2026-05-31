@@ -130,7 +130,6 @@ Do not use:
 * Real patient data
 * Production healthcare data
 * Real medical device output
-* Proprietary Oracle/Cerner documentation
 * Internal work screenshots
 * Credentials, tokens, passwords, or `.env` files
 
