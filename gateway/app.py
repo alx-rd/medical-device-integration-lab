@@ -1,14 +1,72 @@
 import requests
 
-
 from fastapi import FastAPI, Body
 
 app = FastAPI()
+
 FHIR_BASE_URL = "http://localhost:8080/fhir"
 DEFAULT_PATIENT_ID = "patient-001"
 
 
-def make_fhir_observation(measurement_name: str, value: float, device_message: dict) -> dict:
+KNOWN_DEVICES = {
+    "MON-001": {
+        "fhir_device_id": "mon-001",
+        "display": "Fake Vital Signs Monitor 001"
+    }
+}
+
+
+ALLOWED_MEASUREMENTS = {
+    "hr": {
+        "meaning": "Heart Rate",
+        "loinc": "8867-4",
+        "unit": "beats/min",
+        "unit_code": "/min",
+        "min": 20,
+        "max": 250
+    },
+    "spo2": {
+        "meaning": "Oxygen Saturation",
+        "loinc": "59408-5",
+        "unit": "%",
+        "unit_code": "%",
+        "min": 50,
+        "max": 100
+    },
+    "rr": {
+        "meaning": "Respiratory Rate",
+        "loinc": "9279-1",
+        "unit": "breaths/min",
+        "unit_code": "/min",
+        "min": 2,
+        "max": 80
+    },
+    "temp_c": {
+        "meaning": "Temperature Celsius",
+        "loinc": "8310-5",
+        "unit": "Cel",
+        "unit_code": "Cel",
+        "min": 30,
+        "max": 45
+    }
+}
+
+
+def fhir_resource_exists(resource_type: str, resource_id: str) -> bool:
+    response = requests.get(
+        f"{FHIR_BASE_URL}/{resource_type}/{resource_id}",
+        headers={"Accept": "application/fhir+json"},
+        timeout=10
+    )
+
+    return response.status_code == 200
+
+
+def make_fhir_observation(
+    measurement_name: str,
+    value: float,
+    device_message: dict
+) -> dict:
     device_id = device_message["device_id"]
     measurement = ALLOWED_MEASUREMENTS[measurement_name]
     fhir_device_id = KNOWN_DEVICES[device_id]["fhir_device_id"]
@@ -52,6 +110,7 @@ def make_fhir_observation(measurement_name: str, value: float, device_message: d
         }
     }
 
+
 def post_observation_to_fhir(observation: dict) -> dict:
     response = requests.post(
         f"{FHIR_BASE_URL}/Observation",
@@ -74,52 +133,6 @@ def post_observation_to_fhir(observation: dict) -> dict:
         "observation_id": created_observation.get("id")
     }
 
-KNOWN_DEVICES = {
-    "MON-001": {
-        "fhir_device_id": "mon-001",
-        "display": "Fake Vital Signs Monitor 001"
-    }
-}
-
-ALLOWED_MEASUREMENTS = {
-    "hr": {
-        "meaning": "Heart Rate",
-        "loinc": "8867-4",
-        "unit": "beats/min",
-        "unit_code": "/min",
-        "min": 20,
-        "max":250
-    },
-
-    "spo2": {
-        "meaning": "Oxygen Saturation",
-        "loinc": "59408-5",
-        "unit": "%",
-        "unit_code": "%",
-        "min": 50,
-        "max":100
-    },
-    "rr": {
-        "meaning": "Respiratory Rate",
-        "loinc": "9279-1",
-        "unit": "breaths/min",
-        "unit_code": "/min",
-        "min": 2,
-        "max":80
-    },
-    "temp_c": {
-
-        "meaning": "Temperature Celsius",
-        "loinc": "8310-5",
-        "unit": "Cel",
-        "unit_code": "Cel",
-        "min": 30,
-        "max": 45
-    }
-    
-} 
-
-
 
 @app.post("/device-event")
 async def receive_device_event(device_message: dict = Body(...)):
@@ -136,7 +149,7 @@ async def receive_device_event(device_message: dict = Body(...)):
             "reason": "missing_required_fields",
             "missing_fields": missing_fields
         }
-    
+
     device_id = device_message["device_id"]
 
     if device_id not in KNOWN_DEVICES:
@@ -189,11 +202,33 @@ async def receive_device_event(device_message: dict = Body(...)):
     print("Received valid measurements:")
     print(measurements)
 
+    fhir_device_id = KNOWN_DEVICES[device_id]["fhir_device_id"]
+
+    missing_dependencies = []
+
+    if not fhir_resource_exists("Patient", DEFAULT_PATIENT_ID):
+        missing_dependencies.append(f"Patient/{DEFAULT_PATIENT_ID}")
+
+    if not fhir_resource_exists("Device", fhir_device_id):
+        missing_dependencies.append(f"Device/{fhir_device_id}")
+
+    if missing_dependencies:
+        return {
+            "status": "rejected",
+            "reason": "missing_fhir_dependencies",
+            "missing_dependencies": missing_dependencies
+        }
+
     fhir_observations = []
     fhir_post_results = []
 
     for measurement_name, value in measurements.items():
-        observation = make_fhir_observation(measurement_name, value, device_message)
+        observation = make_fhir_observation(
+            measurement_name,
+            value,
+            device_message
+        )
+
         fhir_observations.append(observation)
 
         post_result = post_observation_to_fhir(observation)
@@ -201,8 +236,9 @@ async def receive_device_event(device_message: dict = Body(...)):
 
     return {
         "status": "received",
-        "message": "Device message passed validation, was mapped to FHIR, and was sent to HAPI FHIR",
+        "message": "Device message passed validation, dependencies were found, was mapped to FHIR, and was sent to HAPI FHIR",
         "received_message": device_message,
         "fhir_post_results": fhir_post_results,
         "fhir_observations": fhir_observations
     }
+
