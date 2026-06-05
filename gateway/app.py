@@ -15,6 +15,18 @@ KNOWN_DEVICES = {
     }
 }
 
+DEVICE_ASSOCIATIONS = {
+
+  "MON-001": {
+        "patient_id": "patient-001",
+        "encounter_id": "encounter-001",
+        "location": "ICU-101",
+        "status": "inactive"
+    }
+
+
+}
+
 
 ALLOWED_MEASUREMENTS = {
     "hr": {
@@ -65,7 +77,8 @@ def fhir_resource_exists(resource_type: str, resource_id: str) -> bool:
 def make_fhir_observation(
     measurement_name: str,
     value: float,
-    device_message: dict
+    device_message: dict,
+    patient_id: str
 ) -> dict:
     device_id = device_message["device_id"]
     measurement = ALLOWED_MEASUREMENTS[measurement_name]
@@ -96,7 +109,7 @@ def make_fhir_observation(
             "text": measurement["meaning"]
         },
         "subject": {
-            "reference": f"Patient/{DEFAULT_PATIENT_ID}"
+            "reference": f"Patient/{patient_id}"
         },
         "device": {
             "reference": f"Device/{fhir_device_id}"
@@ -159,6 +172,25 @@ async def receive_device_event(device_message: dict = Body(...)):
             "reason": "unknown_device_id",
             "device_id": device_id
         }
+    
+    if device_id not in DEVICE_ASSOCIATIONS:
+        return{
+            "status": "rejected",
+            "reason": "missing_device_patient_association",
+            "device_id": device_id
+        }
+    
+    association = DEVICE_ASSOCIATIONS[device_id]
+
+    if association["status"] != "active":
+        return {
+            "status": "rejected",
+            "reason": "inactive_device_patient_association",
+            "device_id": device_id,
+            "association_status": association["status"],
+        }
+    
+    patient_id = association["patient_id"]
 
     print("Received valid-looking device message:")
     print(device_message)
@@ -206,8 +238,8 @@ async def receive_device_event(device_message: dict = Body(...)):
 
     missing_dependencies = []
 
-    if not fhir_resource_exists("Patient", DEFAULT_PATIENT_ID):
-        missing_dependencies.append(f"Patient/{DEFAULT_PATIENT_ID}")
+    if not fhir_resource_exists("Patient", patient_id):
+        missing_dependencies.append(f"Patient/{patient_id}")
 
     if not fhir_resource_exists("Device", fhir_device_id):
         missing_dependencies.append(f"Device/{fhir_device_id}")
@@ -226,7 +258,8 @@ async def receive_device_event(device_message: dict = Body(...)):
         observation = make_fhir_observation(
             measurement_name,
             value,
-            device_message
+            device_message,
+            patient_id
         )
 
         fhir_observations.append(observation)
